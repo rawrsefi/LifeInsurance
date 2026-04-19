@@ -5,6 +5,7 @@ const FOOTER_LINKS = {
   Insurance: [
     { href: "/life-insurance", label: "Life Insurance" },
     { href: "/annuities", label: "Annuities" },
+    { href: "/apply", label: "Apply Now" },
     { href: "/contact", label: "Get a Quote" },
   ],
   Resources: [

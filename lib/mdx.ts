@@ -16,6 +16,9 @@ export interface BlogPost {
   readingTime: string;
   faq: { question: string; answer: string }[];
   content: string;
+  /** Optional; falls back to site editorial defaults for EEAT. */
+  reviewedBy?: string;
+  reviewedByCredential?: string;
 }
 
 export function getAllPosts(): BlogPost[] {
@@ -45,7 +48,37 @@ export function getPostBySlug(slug: string): BlogPost | null {
     readingTime: stats.text,
     faq: data.faq || [],
     content: cleaned,
+    reviewedBy: typeof data.reviewedBy === "string" ? data.reviewedBy : undefined,
+    reviewedByCredential: typeof data.reviewedByCredential === "string" ? data.reviewedByCredential : undefined,
   };
+}
+
+function keywordJaccard(a: string[], b: string[]): number {
+  const norm = (s: string) => s.toLowerCase().trim();
+  const A = new Set(a.map(norm));
+  const B = new Set(b.map(norm));
+  let inter = 0;
+  for (const x of A) if (B.has(x)) inter++;
+  const union = A.size + B.size - inter;
+  return union === 0 ? 0 : inter / union;
+}
+
+/** Related posts by keyword overlap; falls back to most recent if ties are weak. */
+export function getRelatedPosts(slug: string, limit = 3): BlogPost[] {
+  const all = getAllPosts().filter((p) => p.slug !== slug);
+  const current = getPostBySlug(slug);
+  if (!current || all.length === 0) return [];
+
+  const scored = all.map((p) => ({
+    post: p,
+    score: keywordJaccard(current.keywords, p.keywords),
+  }));
+  scored.sort((a, b) => b.score - a.score || +new Date(b.post.date) - +new Date(a.post.date));
+
+  if (scored[0].score === 0) {
+    return all.slice(0, limit);
+  }
+  return scored.slice(0, limit).map((s) => s.post);
 }
 
 export function getAllSlugs(): string[] {

@@ -1,0 +1,21 @@
+# Assurity Enterprise Group (AEG)
+
+> Life insurance and annuity education and applications. Site: https://www.aeginsurance.com
+
+## Summary
+
+AEG (Assurity Enterprise Group) publishes plain-language guides on life insurance and annuities, offers contact/quote flows, and hosts a full life insurance application. Content is educational; products and availability vary by state and carrier.
+
+## Authoritative pages
+
+- https://www.aeginsurance.com/
+- https://www.aeginsurance.com/life-insurance
+- https://www.aeginsurance.com/annuities
+- https://www.aeginsurance.com/blog
+- https://www.aeginsurance.com/about
+- https://www.aeginsurance.com/contact
+- https://www.aeginsurance.com/apply
+
+## Optional
+
+- Sitemap: https://www.aeginsurance.com/sitemap.xml

@@ -1,3 +1,5 @@
+import { getOrgSameAsList } from "@/lib/editorial";
+
 export const SITE_URL = "https://www.aeginsurance.com";
 export const SITE_NAME = "AEG - Assurity Enterprise Group";
 export const SITE_DESCRIPTION =
@@ -30,6 +32,7 @@ export function generateArticleSchema({
   datePublished,
   dateModified,
   image,
+  reviewedBy,
 }: {
   title: string;
   description: string;
@@ -37,7 +40,23 @@ export function generateArticleSchema({
   datePublished: string;
   dateModified?: string;
   image?: string;
+  /** When set, adds a Person alongside the org as author for EEAT signals. */
+  reviewedBy?: { name: string; credential?: string };
 }) {
+  const orgAuthor = {
+    "@type": "Organization" as const,
+    name: SITE_NAME,
+    url: SITE_URL,
+  };
+  const authors: object[] = [orgAuthor];
+  if (reviewedBy?.name) {
+    authors.push({
+      "@type": "Person",
+      name: reviewedBy.name,
+      ...(reviewedBy.credential ? { jobTitle: reviewedBy.credential } : {}),
+    });
+  }
+
   return {
     "@context": "https://schema.org",
     "@type": "Article",
@@ -47,11 +66,7 @@ export function generateArticleSchema({
     datePublished,
     dateModified: dateModified || datePublished,
     image: image || `${SITE_URL}/images/aeg-logo.png`,
-    author: {
-      "@type": "Organization",
-      name: SITE_NAME,
-      url: SITE_URL,
-    },
+    author: authors.length === 1 ? orgAuthor : authors,
     publisher: {
       "@type": "Organization",
       name: SITE_NAME,
@@ -61,6 +76,7 @@ export function generateArticleSchema({
 }
 
 export function generateOrgSchema() {
+  const sameAs = getOrgSameAsList();
   return {
     "@context": "https://schema.org",
     "@type": "InsuranceAgency",
@@ -73,6 +89,6 @@ export function generateOrgSchema() {
       contactType: "customer service",
       availableLanguage: "English",
     },
-    sameAs: [],
+    ...(sameAs.length > 0 ? { sameAs } : {}),
   };
 }

@@ -7,6 +7,8 @@ interface HeroCTAProps {
   ctaHref?: string;
   secondaryText?: string;
   secondaryHref?: string;
+  tertiaryText?: string;
+  tertiaryHref?: string;
   backgroundImage?: string;
 }
 
@@ -17,6 +19,8 @@ export default function HeroCTA({
   ctaHref = "/contact",
   secondaryText,
   secondaryHref,
+  tertiaryText,
+  tertiaryHref,
   backgroundImage,
 }: HeroCTAProps) {
   return (
@@ -34,10 +38,15 @@ export default function HeroCTA({
           <p className="mt-6 text-lg md:text-xl text-gray-300 leading-relaxed max-w-xl">
             {subheadline}
           </p>
-          <div className="mt-10 flex flex-col sm:flex-row gap-4">
+          <div className="mt-10 flex flex-col sm:flex-row sm:flex-wrap gap-4">
             <Link href={ctaHref} className="inline-flex items-center justify-center rounded-lg bg-brand-purple px-8 py-4 text-base font-semibold text-white hover:bg-brand-purple-dark transition-colors">
               {ctaText}
             </Link>
+            {tertiaryText && tertiaryHref && (
+              <Link href={tertiaryHref} className="inline-flex items-center justify-center rounded-lg bg-white/10 px-8 py-4 text-base font-semibold text-white hover:bg-white/20 transition-colors">
+                {tertiaryText}
+              </Link>
+            )}
             {secondaryText && secondaryHref && (
               <Link href={secondaryHref} className="inline-flex items-center justify-center rounded-lg border border-white/20 px-8 py-4 text-base font-semibold text-white hover:bg-white/10 transition-colors">
                 {secondaryText}

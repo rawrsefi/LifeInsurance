@@ -2,10 +2,13 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { compileMDX } from "next-mdx-remote/rsc";
-import { getPostBySlug, getAllSlugs } from "@/lib/mdx";
+import { getPostBySlug, getAllSlugs, getRelatedPosts } from "@/lib/mdx";
 import { generateArticleSchema, generateFAQSchema, SITE_URL } from "@/lib/seo";
+import { resolveReviewer } from "@/lib/editorial";
 import FAQSection from "@/components/FAQSection";
 import CTABlock from "@/components/CTABlock";
+import RelatedPosts from "@/components/RelatedPosts";
+import { BlogPostByline, BlogYMYLDisclaimer } from "@/components/BlogEditorialFooter";
 
 export async function generateStaticParams() {
   return getAllSlugs().map((slug) => ({ slug }));
@@ -41,13 +44,17 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
     options: { parseFrontmatter: false },
   });
 
+  const reviewer = resolveReviewer(post);
   const articleSchema = generateArticleSchema({
     title: post.title,
     description: post.description,
     url: `${SITE_URL}/blog/${slug}`,
     datePublished: post.date,
     image: post.image,
+    reviewedBy: { name: reviewer.name, credential: reviewer.credential },
   });
+
+  const related = getRelatedPosts(slug, 3);
 
   return (
     <>
@@ -71,17 +78,20 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
           <header className="mb-12">
             <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-gray-900 leading-tight">{post.title}</h1>
             <p className="mt-4 text-lg text-gray-600">{post.description}</p>
-            <div className="mt-6 flex items-center gap-4 text-sm text-brand-gray">
+            <div className="mt-6 flex flex-wrap items-center gap-4 text-sm text-brand-gray">
               <time dateTime={post.date}>{new Date(post.date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</time>
               <span>&middot;</span>
               <span>{post.readingTime}</span>
             </div>
+            <BlogPostByline post={post} />
           </header>
 
           {/* Content */}
           <div className="prose prose-lg prose-gray max-w-none prose-headings:text-gray-900 prose-headings:font-bold prose-a:text-brand-purple prose-a:no-underline hover:prose-a:underline prose-strong:text-gray-900 prose-img:rounded-xl">
             {content}
           </div>
+          <BlogYMYLDisclaimer />
+          <RelatedPosts posts={related} />
         </div>
       </article>
 

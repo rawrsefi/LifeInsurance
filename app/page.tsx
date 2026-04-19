@@ -122,6 +122,8 @@ export default function Home() {
         subheadline="Life insurance and annuity solutions tailored to your needs. Because the people you love deserve financial security — no matter what tomorrow brings."
         ctaText="Get Your Free Quote"
         ctaHref="/contact"
+        tertiaryText="Apply Now"
+        tertiaryHref="/apply"
         secondaryText="Explore Our Solutions"
         secondaryHref="/life-insurance"
         backgroundImage="https://images.unsplash.com/photo-1511895426328-dc8714191300?w=1400&q=80"

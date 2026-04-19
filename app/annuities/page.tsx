@@ -202,9 +202,12 @@ export default function AnnuitiesPage() {
               { title: "What Happens When an Annuity Matures?", href: "/blog/what-happens-when-an-annuity-matures" },
               { title: "Can You Transfer an Annuity?", href: "/blog/can-you-transfer-an-annuity-to-another-person" },
               { title: "What Happens to an Annuity When You Die?", href: "/blog/what-happens-to-an-annuity-when-you-die" },
+              { title: "Are Annuities FDIC Insured?", href: "/blog/are-annuities-fdic-insured" },
+              { title: "Qualified vs Non-Qualified Annuities", href: "/blog/qualified-vs-non-qualified-annuity" },
               { title: "Annuity Loans Explained", href: "/blog/annuity-loans" },
               { title: "Immediate vs Deferred Annuity", href: "/blog/immediate-vs-deferred-annuity" },
               { title: "IRA vs Annuity", href: "/blog/ira-vs-annuity" },
+              { title: "Insurance Replacement Disclosure (Overview)", href: "/blog/insurance-replacement-disclosure" },
             ].map((link) => (
               <Link key={link.href} href={link.href} className="group rounded-lg border border-gray-200 p-6 hover:border-brand-purple/30 hover:shadow-sm transition-all">
                 <h3 className="font-semibold text-gray-900 group-hover:text-brand-purple transition-colors">{link.title}</h3>
