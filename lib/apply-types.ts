@@ -1,6 +1,4 @@
-export interface EncryptedEnvelope {
-  alg: "A256GCM-RSA-OAEP-256";
-  wrappedKey: string;
-  iv: string;
-  ciphertext: string;
+/** POST /api/apply JSON body (compact JWE string). */
+export interface ApplyJweBody {
+  jwe: string;
 }

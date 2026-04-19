@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
-import { decryptEnvelope } from "@/lib/apply-crypto";
+import { decryptApplicationJwe } from "@/lib/apply-jwe-server";
+import { deepTrimPayloadStrings } from "@/lib/apply-payload-normalize";
 import { applyPayloadSchema } from "@/lib/apply-schema";
 import { generateApplicationPdf } from "@/lib/generate-application-pdf";
-import type { EncryptedEnvelope } from "@/lib/apply-types";
+import type { ApplyJweBody } from "@/lib/apply-types";
 
 export const runtime = "nodejs";
 
@@ -14,16 +15,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Server encryption is not configured." }, { status: 503 });
     }
 
-    const body = (await request.json()) as EncryptedEnvelope;
-    if (!body?.wrappedKey || !body?.iv || !body?.ciphertext || body.alg !== "A256GCM-RSA-OAEP-256") {
-      return NextResponse.json({ error: "Invalid encrypted payload." }, { status: 400 });
+    let body: ApplyJweBody;
+    try {
+      body = (await request.json()) as ApplyJweBody;
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+
+    if (!body?.jwe || typeof body.jwe !== "string" || !body.jwe.trim()) {
+      return NextResponse.json({ error: "Missing or invalid JWE payload." }, { status: 400 });
     }
 
     let json: string;
     try {
-      json = decryptEnvelope(body, privateKey.replace(/\\n/g, "\n"));
+      json = await decryptApplicationJwe(body.jwe.trim(), privateKey);
     } catch {
-      return NextResponse.json({ error: "Could not decrypt application. Check keys match." }, { status: 400 });
+      return NextResponse.json({ error: "Could not decrypt application. Confirm keys match the environment." }, { status: 400 });
     }
 
     let parsed: unknown;
@@ -33,15 +40,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid JSON after decrypt." }, { status: 400 });
     }
 
+    parsed = deepTrimPayloadStrings(parsed);
+
     const data = applyPayloadSchema.safeParse(parsed);
     if (!data.success) {
       const issues = data.error.issues.map((i) => ({
         path: i.path.length ? i.path.join(".") : "form",
         message: i.message,
       }));
+      const first = issues[0];
       return NextResponse.json(
         {
-          error: "Validation failed. Check the highlighted fields and try again.",
+          error: first
+            ? `Validation: ${first.path === "form" ? first.message : `${first.path} — ${first.message}`}`
+            : "Validation failed. See issues below.",
           issues,
           details: data.error.flatten(),
         },
@@ -62,7 +74,7 @@ export async function POST(request: Request) {
         from: process.env.RESEND_FROM || "AEG Applications <onboarding@resend.dev>",
         to: [to],
         subject: `New application — ${data.data.insured.firstName} ${data.data.insured.lastName}`,
-        html: `<p>A new encrypted application was submitted and decrypted server-side.</p><p><strong>Insured:</strong> ${data.data.insured.firstName} ${data.data.insured.lastName}</p><p>PDF is attached.</p>`,
+        html: `<p>A new encrypted application was submitted (JWE) and decrypted server-side.</p><p><strong>Insured:</strong> ${data.data.insured.firstName} ${data.data.insured.lastName}</p><p>PDF is attached.</p>`,
         attachments: [{ filename, content: Buffer.from(pdfBytes) }],
       });
     } else {

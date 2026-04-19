@@ -20,7 +20,13 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 ## Apply Now (encrypted submissions)
 
-The `/apply` flow posts a **hybrid-encrypted** payload (AES-256-GCM + RSA-OAEP).
+The `/apply` flow sends the application as **JWE** ([RFC 7516](https://www.rfc-editor.org/rfc/rfc7516)) compact serialization: **RSA-OAEP-256** key encryption + **A256GCM** content encryption, implemented with [`jose`](https://github.com/panva/jose). Only the compact JWE string is posted over **HTTPS**; the server decrypts with the private key, validates with Zod, then builds the PDF.
+
+**Operational hygiene (recommended):**
+
+- Rely on **TLS 1.2+** for transport; do not log raw request bodies in proxies or app code.
+- Store `APPLY_RSA_PRIVATE_KEY_PEM` in your host’s **secret store** (e.g. Vercel Environment Variables, AWS Secrets Manager, GCP Secret Manager). Rotate the keypair periodically.
+- Restrict who can view production env vars and deployment logs.
 
 ### Required setup
 
@@ -37,8 +43,8 @@ node scripts/generate-apply-keys.mjs
 
 | Variable | Where | Purpose |
 |----------|--------|---------|
-| `NEXT_PUBLIC_APPLY_RSA_PUBLIC_KEY_PEM` | Client (build-time) | RSA public key (PEM) used in the browser to wrap the AES key. |
-| `APPLY_RSA_PRIVATE_KEY_PEM` | Server only | RSA private key (PEM) to unwrap and decrypt on `POST /api/apply`. Never commit. The API normalizes `\\n` to real newlines in the stored value. |
+| `NEXT_PUBLIC_APPLY_RSA_PUBLIC_KEY_PEM` | Client (build-time) | RSA public key (SPKI PEM) for JWE encryption in the browser. |
+| `APPLY_RSA_PRIVATE_KEY_PEM` | Server only | RSA private key (PKCS#8 PEM) to decrypt JWE on `POST /api/apply`. Never commit. The API normalizes `\\n` to real newlines in the stored value. |
 | `RESEND_API_KEY` | Server | Resend API key for email. |
 | `APPLY_EMAIL` or `CONTACT_EMAIL` | Server | Recipient for application PDFs. |
 | `RESEND_FROM` | Server (optional) | From address (must be verified in Resend). |

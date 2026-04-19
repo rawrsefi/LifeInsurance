@@ -191,36 +191,61 @@ export const applyPayloadSchema = z
     if (!a.accuracyConfirmed || !a.electronicSignatureConsent || !a.notBindingCoverage || !a.achAuthorization || !a.privacyAcknowledged) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "All required attestations must be accepted",
+        message:
+          "On the Review step, all five checkboxes must be checked (accuracy, e-sign, not binding until approved, ACH authorization, privacy).",
         path: ["attestations"],
       });
     }
     if (!data.ownerSameAsInsured) {
       const o = data.owner;
       if (!o?.firstName || !o?.lastName || !o?.address1 || !o?.city || !o?.state || !o?.zip || !o?.relationshipToInsured) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Owner details required when owner differs from insured", path: ["owner"] });
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Owner step: complete name, address, state (2 letters), ZIP, and relationship when owner is not the insured.",
+          path: ["owner"],
+        });
       }
     }
     if (data.employment.status === "employed" || data.employment.status === "selfEmployed") {
       if (!data.employment.employerName?.trim()) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Employer name required", path: ["employment", "employerName"] });
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Employment: employer or business name is required when status is employed or self-employed.",
+          path: ["employment", "employerName"],
+        });
       }
       if (!data.employment.annualSalary?.trim()) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Annual compensation required", path: ["employment", "annualSalary"] });
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Employment: annual compensation is required when status is employed or self-employed.",
+          path: ["employment", "annualSalary"],
+        });
       }
       if (!data.employment.jobTitle?.trim()) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Job title required", path: ["employment", "jobTitle"] });
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Employment: job title is required when status is employed or self-employed.",
+          path: ["employment", "jobTitle"],
+        });
       }
     }
     if (data.insured.secondaryAddressee.wantsCopy) {
       const s = data.insured.secondaryAddressee;
       if (!s.firstName || !s.lastName || !s.address1 || !s.city || !s.state || !s.zip) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Secondary addressee address required", path: ["insured", "secondaryAddressee"] });
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Secondary addressee: complete name and full address (including state and ZIP).",
+          path: ["insured", "secondaryAddressee"],
+        });
       }
     }
-    const total = data.beneficiaries.reduce((sum, b) => sum + b.percent, 0);
+    const total = data.beneficiaries.reduce((sum, b) => sum + Number(b.percent), 0);
     if (Math.abs(total - 100) > 0.01) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Beneficiary percentages must total 100%", path: ["beneficiaries"] });
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Beneficiary percentages must total 100% (currently ${total.toFixed(2)}%). Use “Add beneficiary” to auto-split, or adjust manually.`,
+        path: ["beneficiaries"],
+      });
     }
   });
 

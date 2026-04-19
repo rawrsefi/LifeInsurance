@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Generates RSA-2048 keypair for Apply Now hybrid encryption.
+ * Generates RSA-2048 keypair for Apply Now JWE (RSA-OAEP-256 + A256GCM via jose).
  *
  * Run: node scripts/generate-apply-keys.mjs
  *

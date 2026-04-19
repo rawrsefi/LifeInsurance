@@ -2,11 +2,13 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { encryptPayloadJson } from "@/lib/apply-crypto-client";
+import { encryptApplicationJwe } from "@/lib/apply-jwe-client";
+import { deepTrimPayloadStrings } from "@/lib/apply-payload-normalize";
 import { equalBeneficiaryPercents } from "@/lib/apply-beneficiary-utils";
 import { createInitialApplyPayload } from "@/lib/apply-defaults";
 import { applyPayloadSchema } from "@/lib/apply-schema";
 import type { ApplyPayload } from "@/lib/apply-schema";
+import { SensitiveField } from "@/components/apply/SensitiveField";
 
 const STEPS = [
   "Proposed insured",
@@ -74,8 +76,9 @@ export default function ApplyWizard() {
     setErrorMsg("");
     setValidationIssues([]);
 
-    const payload = { ...form, submittedAt: new Date().toISOString() };
-    const checked = applyPayloadSchema.safeParse(payload);
+    const raw = { ...form, submittedAt: new Date().toISOString() };
+    const trimmed = deepTrimPayloadStrings(raw);
+    const checked = applyPayloadSchema.safeParse(trimmed);
     if (!checked.success) {
       setValidationIssues(checked.error.issues.map((i) => (i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message)));
       setStatus("error");
@@ -86,22 +89,20 @@ export default function ApplyWizard() {
     setStatus("loading");
     try {
       const json = JSON.stringify(checked.data);
-      const envelope = await encryptPayloadJson(json, publicKey);
+      const jwe = await encryptApplicationJwe(json, publicKey);
       const res = await fetch("/api/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(envelope),
+        body: JSON.stringify({ jwe }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
         issues?: { path: string; message: string }[];
       };
       if (!res.ok) {
-        if (data.issues?.length) {
-          setValidationIssues(issuesToStrings(data.issues));
-        } else {
-          setErrorMsg(data.error || "Submission failed");
-        }
+        const list = data.issues?.length ? issuesToStrings(data.issues) : [];
+        setValidationIssues(list);
+        setErrorMsg(data.error || list[0] || "Submission failed");
         setStatus("error");
         setStep(7);
         return;
@@ -265,11 +266,22 @@ export default function ApplyWizard() {
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
               <Label req>SSN / Tax ID</Label>
-              <input className={inpCls()} autoComplete="off" value={form.insured.ssnOrTaxId} onChange={(e) => setInsured({ ssnOrTaxId: e.target.value })} />
+              <SensitiveField
+                className={fieldCls}
+                value={form.insured.ssnOrTaxId}
+                onChange={(v) => setInsured({ ssnOrTaxId: v })}
+                aria-label="Social Security or Tax ID"
+              />
+              <p className="mt-1.5 text-xs text-gray-500">Hidden while typing (like a password). Still encrypted with the rest of your application before it is sent.</p>
             </div>
             <div>
               <Label req>Driver license or state ID</Label>
-              <input className={inpCls()} value={form.insured.driversLicenseOrStateId} onChange={(e) => setInsured({ driversLicenseOrStateId: e.target.value })} />
+              <SensitiveField
+                className={fieldCls}
+                value={form.insured.driversLicenseOrStateId}
+                onChange={(v) => setInsured({ driversLicenseOrStateId: v })}
+                aria-label="Driver license or state ID number"
+              />
             </div>
           </div>
           <h3 className="font-semibold pt-4">Trusted contact</h3>
@@ -342,7 +354,7 @@ export default function ApplyWizard() {
           </label>
           {!form.ownerSameAsInsured && (
             <div className="space-y-3 border rounded-lg p-4">
-              {(["firstName", "middleName", "lastName", "address1", "city", "state", "zip", "phone", "email", "relationshipToInsured", "ssnOrTaxId", "dob"] as const).map((field) => (
+              {(["firstName", "middleName", "lastName", "address1", "city", "state", "zip", "phone", "email", "relationshipToInsured", "dob"] as const).map((field) => (
                 <div key={field}>
                   <Label>{field}</Label>
                   <input
@@ -352,6 +364,15 @@ export default function ApplyWizard() {
                   />
                 </div>
               ))}
+              <div>
+                <Label>SSN / Tax ID</Label>
+                <SensitiveField
+                  className={fieldCls}
+                  value={form.owner?.ssnOrTaxId || ""}
+                  onChange={(v) => setForm((f) => ({ ...f, owner: { ...f.owner, ssnOrTaxId: v } }))}
+                  aria-label="Owner SSN or Tax ID"
+                />
+              </div>
               <div>
                 <Label>Sex</Label>
                 <select
@@ -511,7 +532,21 @@ export default function ApplyWizard() {
               </div>
               <input placeholder="Relationship" className={inpCls()} value={b.relationship} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], relationship: e.target.value }; return { ...f, beneficiaries: n }; })} />
               <div className="grid sm:grid-cols-3 gap-2">
-                <input placeholder="SSN/Tax ID (optional)" className={inpCls()} value={b.ssnOrTaxId || ""} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], ssnOrTaxId: e.target.value }; return { ...f, beneficiaries: n }; })} />
+                <div>
+                  <span className="mb-2 block text-sm font-semibold text-gray-800">SSN / Tax ID (optional)</span>
+                  <SensitiveField
+                    className={fieldCls}
+                    value={b.ssnOrTaxId || ""}
+                    onChange={(v) =>
+                      setForm((f) => {
+                        const n = [...f.beneficiaries];
+                        n[idx] = { ...n[idx], ssnOrTaxId: v };
+                        return { ...f, beneficiaries: n };
+                      })
+                    }
+                    aria-label={`Beneficiary ${idx + 1} SSN or Tax ID`}
+                  />
+                </div>
                 <input type="date" className={inpCls()} value={b.dob} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], dob: e.target.value }; return { ...f, beneficiaries: n }; })} />
                 <input type="number" placeholder="%" className={inpCls()} value={b.percent} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], percent: parseFloat(e.target.value) || 0 }; return { ...f, beneficiaries: n }; })} />
               </div>
@@ -635,7 +670,11 @@ export default function ApplyWizard() {
       {step === 6 && (
         <section className="space-y-4">
           <h2 className="text-lg font-bold">Banking, physician & employment</h2>
-          <p className="text-xs text-gray-500">Banking and tax identifiers are encrypted end-to-end before transmission.</p>
+          <p className="rounded-lg border border-brand-purple/15 bg-brand-purple/5 px-4 py-3 text-sm leading-relaxed text-gray-700">
+            <strong className="text-gray-900">Privacy:</strong> Account and routing numbers are hidden while you type. The{" "}
+            <strong>entire application</strong> is encrypted in your browser before it is sent. Our team only sees decrypted values in the PDF
+            generated on our secure server for processing—not in plain text over the internet.
+          </p>
           <h3 className="font-semibold">Bank (ACH premium)</h3>
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
@@ -651,11 +690,25 @@ export default function ApplyWizard() {
             </div>
             <div>
               <Label req>Routing (9 digits)</Label>
-              <input className={inpCls()} maxLength={9} value={form.banking.routingNumber} onChange={(e) => setForm((f) => ({ ...f, banking: { ...f.banking, routingNumber: e.target.value.replace(/\D/g, "").slice(0, 9) } }))} />
+              <SensitiveField
+                className={fieldCls}
+                maxLength={9}
+                inputMode="numeric"
+                value={form.banking.routingNumber}
+                onChange={(v) =>
+                  setForm((f) => ({ ...f, banking: { ...f.banking, routingNumber: v.replace(/\D/g, "").slice(0, 9) } }))
+                }
+                aria-label="Bank routing number"
+              />
             </div>
             <div>
               <Label req>Account number</Label>
-              <input className={inpCls()} autoComplete="off" value={form.banking.accountNumber} onChange={(e) => setForm((f) => ({ ...f, banking: { ...f.banking, accountNumber: e.target.value } }))} />
+              <SensitiveField
+                className={fieldCls}
+                value={form.banking.accountNumber}
+                onChange={(v) => setForm((f) => ({ ...f, banking: { ...f.banking, accountNumber: v } }))}
+                aria-label="Bank account number"
+              />
             </div>
           </div>
           <h3 className="font-semibold">Treating physician</h3>

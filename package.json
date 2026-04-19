@@ -11,6 +11,7 @@
   "dependencies": {
     "@tailwindcss/typography": "^0.5.19",
     "gray-matter": "^4.0.3",
+    "jose": "^6.2.2",
     "next": "16.1.6",
     "next-mdx-remote": "^6.0.0",
     "pdf-lib": "^1.17.1",
