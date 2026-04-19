@@ -9,6 +9,7 @@ import { createInitialApplyPayload } from "@/lib/apply-defaults";
 import { applyPayloadSchema } from "@/lib/apply-schema";
 import type { ApplyPayload } from "@/lib/apply-schema";
 import { SensitiveField } from "@/components/apply/SensitiveField";
+import { stepFromValidationPath } from "@/lib/apply-step-from-path";
 
 const STEPS = [
   "Proposed insured",
@@ -80,9 +81,11 @@ export default function ApplyWizard() {
     const trimmed = deepTrimPayloadStrings(raw);
     const checked = applyPayloadSchema.safeParse(trimmed);
     if (!checked.success) {
-      setValidationIssues(checked.error.issues.map((i) => (i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message)));
+      const lines = checked.error.issues.map((i) => (i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message));
+      setValidationIssues(lines);
+      const firstPath = checked.error.issues[0]?.path.join(".") ?? "";
+      setStep(stepFromValidationPath(firstPath));
       setStatus("error");
-      setStep(7);
       return;
     }
 
@@ -103,8 +106,12 @@ export default function ApplyWizard() {
         const list = data.issues?.length ? issuesToStrings(data.issues) : [];
         setValidationIssues(list);
         setErrorMsg(data.error || list[0] || "Submission failed");
+        if (data.issues?.[0]?.path) {
+          setStep(stepFromValidationPath(data.issues[0].path));
+        } else {
+          setStep(7);
+        }
         setStatus("error");
-        setStep(7);
         return;
       }
       setStatus("success");
@@ -155,7 +162,7 @@ export default function ApplyWizard() {
             </ul>
           ) : null}
           <p className="mt-3 text-xs text-red-800/80">
-            Common fixes: check all boxes on the last step, make beneficiary % add to 100, fill ACH draft date, 9-digit routing number, and employer fields if you selected employed/self-employed.
+            We moved you to the step that matches the first problem. Use <strong>Continue</strong> on each screen in order—don&apos;t skip to Review until every section is filled. Check all five boxes on Review, beneficiary % totals 100, ACH date, 9-digit routing, employer fields if employed/self-employed.
           </p>
         </div>
       )}
@@ -487,6 +494,31 @@ export default function ApplyWizard() {
       {step === 4 && (
         <section className="space-y-6">
           <h2 className="text-lg font-bold">Section 5 — Beneficiaries (total % must equal 100)</h2>
+          <p className="text-sm leading-relaxed text-gray-600">
+            Each beneficiary needs a <strong>full mailing address</strong>, <strong>relationship</strong>, <strong>date of birth</strong>, and <strong>percent</strong>. If the primary lives at the same address as the proposed insured, use the button below.
+          </p>
+          <button
+            type="button"
+            className="rounded-xl border border-brand-purple/30 bg-white px-4 py-2.5 text-sm font-semibold text-brand-purple shadow-sm hover:bg-brand-purple/5"
+            onClick={() =>
+              setForm((f) => {
+                const i = f.insured;
+                const n = [...f.beneficiaries];
+                if (!n[0]) return f;
+                n[0] = {
+                  ...n[0],
+                  address1: i.address1,
+                  address2: i.address2 || "",
+                  city: i.city,
+                  state: i.state,
+                  zip: i.zip,
+                };
+                return { ...f, beneficiaries: n };
+              })
+            }
+          >
+            Copy proposed insured&apos;s address to beneficiary 1
+          </button>
           {form.beneficiaries.map((b, idx) => (
             <div key={idx} className="space-y-4 rounded-xl border border-gray-100 bg-gray-50/60 p-5 shadow-sm">
               <div className="flex justify-between items-center">
@@ -520,17 +552,32 @@ export default function ApplyWizard() {
                 <input placeholder="Middle" className={inpCls()} value={b.middleName || ""} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], middleName: e.target.value }; return { ...f, beneficiaries: n }; })} />
                 <input placeholder="Last" className={inpCls()} value={b.lastName} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], lastName: e.target.value }; return { ...f, beneficiaries: n }; })} />
               </div>
-              <input placeholder="Address line 1" className={inpCls()} value={b.address1} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], address1: e.target.value }; return { ...f, beneficiaries: n }; })} />
+              <div>
+                <Label req>Mailing address line 1</Label>
+                <input className={inpCls()} value={b.address1} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], address1: e.target.value }; return { ...f, beneficiaries: n }; })} />
+              </div>
               <div className="grid sm:grid-cols-3 gap-2">
-                <input placeholder="City" className={inpCls()} value={b.city} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], city: e.target.value }; return { ...f, beneficiaries: n }; })} />
-                <input placeholder="ST" className={inpCls()} maxLength={2} value={b.state} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], state: e.target.value.toUpperCase() }; return { ...f, beneficiaries: n }; })} />
-                <input placeholder="ZIP" className={inpCls()} value={b.zip} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], zip: e.target.value }; return { ...f, beneficiaries: n }; })} />
+                <div>
+                  <Label req>City</Label>
+                  <input className={inpCls()} value={b.city} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], city: e.target.value }; return { ...f, beneficiaries: n }; })} />
+                </div>
+                <div>
+                  <Label req>State</Label>
+                  <input className={inpCls()} maxLength={2} placeholder="CA" value={b.state} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], state: e.target.value.toUpperCase() }; return { ...f, beneficiaries: n }; })} />
+                </div>
+                <div>
+                  <Label req>ZIP</Label>
+                  <input className={inpCls()} value={b.zip} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], zip: e.target.value }; return { ...f, beneficiaries: n }; })} />
+                </div>
               </div>
               <div className="grid sm:grid-cols-2 gap-2">
                 <input placeholder="Phone" className={inpCls()} value={b.phone || ""} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], phone: e.target.value }; return { ...f, beneficiaries: n }; })} />
                 <input placeholder="Email" className={inpCls()} value={b.email || ""} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], email: e.target.value }; return { ...f, beneficiaries: n }; })} />
               </div>
-              <input placeholder="Relationship" className={inpCls()} value={b.relationship} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], relationship: e.target.value }; return { ...f, beneficiaries: n }; })} />
+              <div>
+                <Label req>Relationship to insured</Label>
+                <input placeholder="e.g. Spouse, Child" className={inpCls()} value={b.relationship} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], relationship: e.target.value }; return { ...f, beneficiaries: n }; })} />
+              </div>
               <div className="grid sm:grid-cols-3 gap-2">
                 <div>
                   <span className="mb-2 block text-sm font-semibold text-gray-800">SSN / Tax ID (optional)</span>
@@ -547,8 +594,14 @@ export default function ApplyWizard() {
                     aria-label={`Beneficiary ${idx + 1} SSN or Tax ID`}
                   />
                 </div>
-                <input type="date" className={inpCls()} value={b.dob} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], dob: e.target.value }; return { ...f, beneficiaries: n }; })} />
-                <input type="number" placeholder="%" className={inpCls()} value={b.percent} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], percent: parseFloat(e.target.value) || 0 }; return { ...f, beneficiaries: n }; })} />
+                <div>
+                  <Label req>Date of birth</Label>
+                  <input type="date" className={inpCls()} value={b.dob} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], dob: e.target.value }; return { ...f, beneficiaries: n }; })} />
+                </div>
+                <div>
+                  <Label req>Share of proceeds (%)</Label>
+                  <input type="number" min={0} max={100} placeholder="%" className={inpCls()} value={b.percent} onChange={(e) => setForm((f) => { const n = [...f.beneficiaries]; n[idx] = { ...n[idx], percent: parseFloat(e.target.value) || 0 }; return { ...f, beneficiaries: n }; })} />
+                </div>
               </div>
             </div>
           ))}
