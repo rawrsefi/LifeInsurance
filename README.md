@@ -20,23 +20,30 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 ## Apply Now (encrypted submissions)
 
-The `/apply` flow posts a **hybrid-encrypted** payload (AES-256-GCM + RSA-OAEP). Configure:
+The `/apply` flow posts a **hybrid-encrypted** payload (AES-256-GCM + RSA-OAEP).
 
-| Variable | Where | Purpose |
-|----------|--------|---------|
-| `NEXT_PUBLIC_APPLY_RSA_PUBLIC_KEY_PEM` | Client (build-time) | RSA public key (PEM) used in the browser to wrap the AES key. |
-| `APPLY_RSA_PRIVATE_KEY_PEM` | Server only | RSA private key (PEM) to unwrap and decrypt on `POST /api/apply`. Never commit. In Vercel/host env, newlines are often escaped as `\n`; the API normalizes `\\n` to real newlines. |
-| `RESEND_API_KEY` | Server | Resend API key for email. |
-| `APPLY_EMAIL` or `CONTACT_EMAIL` | Server | Recipient for application PDFs. |
-| `RESEND_FROM` | Server (optional) | From address (must be verified in Resend). |
+### Required setup
 
-Generate a key pair locally:
+1. Copy [`.env.example`](.env.example) to `.env.local` in the project root (this file is gitignored).
+2. Generate a keypair:
 
 ```bash
 node scripts/generate-apply-keys.mjs
 ```
 
-Copy the printed PEM strings into your `.env.local` (public) and hosting secrets (private). Rotate keys periodically and redeploy with a new pair.
+3. Paste the **two printed lines** (`NEXT_PUBLIC_APPLY_RSA_PUBLIC_KEY_PEM=…` and `APPLY_RSA_PRIVATE_KEY_PEM=…`) into `.env.local`.
+4. Restart `npm run dev` so the public key is picked up (Next.js inlines `NEXT_PUBLIC_*` at startup/build).
+5. In production (e.g. Vercel), add the **same** variables: public key in project env, private key as a **server-only** secret. Redeploy after any change to `NEXT_PUBLIC_*`.
+
+| Variable | Where | Purpose |
+|----------|--------|---------|
+| `NEXT_PUBLIC_APPLY_RSA_PUBLIC_KEY_PEM` | Client (build-time) | RSA public key (PEM) used in the browser to wrap the AES key. |
+| `APPLY_RSA_PRIVATE_KEY_PEM` | Server only | RSA private key (PEM) to unwrap and decrypt on `POST /api/apply`. Never commit. The API normalizes `\\n` to real newlines in the stored value. |
+| `RESEND_API_KEY` | Server | Resend API key for email. |
+| `APPLY_EMAIL` or `CONTACT_EMAIL` | Server | Recipient for application PDFs. |
+| `RESEND_FROM` | Server (optional) | From address (must be verified in Resend). |
+
+Rotate keys periodically and update both variables together; mismatched keys cause decrypt errors.
 
 ### SEO / EEAT (optional)
 

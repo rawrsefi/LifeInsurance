@@ -1,136 +1,373 @@
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import type { ApplyPayload } from "./apply-schema";
 
-const MARGIN = 48;
-const LINE = 14;
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
+const MARGIN = 50;
+const CONTENT_W = PAGE_WIDTH - 2 * MARGIN;
+const INDENT = 14;
+const GAP_AFTER_SECTION = 18;
+const GAP_AFTER_BLOCK = 10;
+const LINE_FOOTER = 9;
 
-function wrapText(text: string, maxChars: number): string[] {
-  const words = text.split(/\s+/);
+const COL_TEXT = rgb(0.14, 0.14, 0.16);
+const COL_MUTED = rgb(0.38, 0.38, 0.42);
+const COL_PURPLE = rgb(0.49, 0.23, 0.93);
+const COL_BAND_BG = rgb(0.96, 0.94, 0.99);
+const COL_BAND_BORDER = rgb(0.85, 0.82, 0.92);
+const COL_HEADER_BG = rgb(0.49, 0.23, 0.93);
+
+function wrapByWidth(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let cur = "";
   for (const w of words) {
-    const next = cur ? `${cur} ${w}` : w;
-    if (next.length <= maxChars) cur = next;
+    const test = cur ? `${cur} ${w}` : w;
+    if (font.widthOfTextAtSize(test, size) <= maxWidth) cur = test;
     else {
       if (cur) lines.push(cur);
-      cur = w.length > maxChars ? w.slice(0, maxChars) : w;
+      if (font.widthOfTextAtSize(w, size) <= maxWidth) cur = w;
+      else {
+        let chunk = w;
+        while (chunk.length > 0) {
+          let lo = 1;
+          let hi = chunk.length;
+          let best = 1;
+          while (lo <= hi) {
+            const mid = Math.floor((lo + hi) / 2);
+            const sub = chunk.slice(0, mid);
+            if (font.widthOfTextAtSize(sub, size) <= maxWidth) {
+              best = mid;
+              lo = mid + 1;
+            } else hi = mid - 1;
+          }
+          lines.push(chunk.slice(0, best));
+          chunk = chunk.slice(best);
+        }
+        cur = "";
+      }
     }
   }
   if (cur) lines.push(cur);
   return lines.length ? lines : [""];
 }
 
+function lineHeight(size: number) {
+  return Math.ceil(size * 1.35);
+}
+
+type Layout = {
+  doc: PDFDocument;
+  page: PDFPage;
+  y: number;
+  font: PDFFont;
+  bold: PDFFont;
+};
+
 export async function generateApplicationPdf(data: ApplyPayload): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-  let page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  let y = PAGE_HEIGHT - MARGIN;
-  const maxW = Math.floor((PAGE_WIDTH - 2 * MARGIN) / 6.5);
 
-  const addLine = (text: string, size = 10, isBold = false) => {
-    const f = isBold ? bold : font;
-    for (const line of wrapText(text, maxW)) {
-      if (y < MARGIN + 40) {
-        page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-        y = PAGE_HEIGHT - MARGIN;
-      }
-      page.drawText(line, { x: MARGIN, y, size, font: f, color: rgb(0.1, 0.1, 0.1) });
-      y -= LINE;
+  doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  const layout: Layout = {
+    doc,
+    page: doc.getPage(0),
+    y: PAGE_HEIGHT - MARGIN,
+    font,
+    bold,
+  };
+
+  const ensure = (minHeight: number) => {
+    if (layout.y - minHeight < MARGIN + 36) {
+      layout.page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+      layout.y = PAGE_HEIGHT - MARGIN;
     }
   };
 
-  const section = (title: string) => {
-    y -= 6;
-    addLine(title, 12, true);
-    y -= 4;
+  const textLines = (lines: string[], size: number, f: PDFFont, color = COL_TEXT, x: number = MARGIN) => {
+    const lh = lineHeight(size);
+    for (const line of lines) {
+      ensure(lh + 2);
+      layout.page.drawText(line, { x, y: layout.y, size, font: f, color });
+      layout.y -= lh;
+    }
   };
 
-  addLine("Assurity Enterprise Group — Life Insurance Application Summary", 14, true);
-  addLine(`Generated: ${new Date().toISOString()}`, 9, false);
-  addLine(`Submitted at (client): ${data.submittedAt}`, 9, false);
-  y -= 8;
+  const paragraph = (body: string, size = 10, color = COL_TEXT) => {
+    textLines(wrapByWidth(body, font, size, CONTENT_W), size, font, color);
+  };
 
-  section("SECTION 1 — Proposed Insured");
+  const keyValue = (label: string, value: string, valueSize = 10) => {
+    const labelSize = 8.5;
+    ensure(lineHeight(labelSize) + 4);
+    layout.page.drawText(label.toUpperCase(), {
+      x: MARGIN,
+      y: layout.y,
+      size: labelSize,
+      font: bold,
+      color: COL_MUTED,
+    });
+    layout.y -= lineHeight(labelSize) + 2;
+    const valLines = wrapByWidth(value, font, valueSize, CONTENT_W - INDENT);
+    textLines(valLines, valueSize, font, COL_TEXT, MARGIN + INDENT);
+    layout.y -= 4;
+  };
+
+  const spacer = (pts: number) => {
+    layout.y -= pts;
+  };
+
+  const section = (num: string, title: string) => {
+    spacer(GAP_AFTER_SECTION);
+    const bandH = 26;
+    ensure(bandH + 12);
+    layout.page.drawRectangle({
+      x: MARGIN,
+      y: layout.y - bandH,
+      width: CONTENT_W,
+      height: bandH,
+      color: COL_BAND_BG,
+      borderColor: COL_BAND_BORDER,
+      borderWidth: 0.75,
+    });
+    layout.page.drawText(`${num}`, {
+      x: MARGIN + 10,
+      y: layout.y - 17,
+      size: 9,
+      font,
+      color: COL_PURPLE,
+    });
+    const titleText = title;
+    layout.page.drawText(titleText, {
+      x: MARGIN + 36,
+      y: layout.y - 17,
+      size: 12,
+      font: bold,
+      color: COL_PURPLE,
+    });
+    layout.y -= bandH + GAP_AFTER_BLOCK;
+  };
+
+  // —— Cover header ——
+  const headerH = 72;
+  ensure(headerH + 8);
+  layout.page.drawRectangle({
+    x: MARGIN,
+    y: layout.y - headerH,
+    width: CONTENT_W,
+    height: headerH,
+    color: COL_HEADER_BG,
+  });
+  layout.page.drawText("Assurity Enterprise Group", {
+    x: MARGIN + 16,
+    y: layout.y - 28,
+    size: 16,
+    font: bold,
+    color: rgb(1, 1, 1),
+  });
+  layout.page.drawText("Life insurance — application summary", {
+    x: MARGIN + 16,
+    y: layout.y - 48,
+    size: 11,
+    font,
+    color: rgb(0.95, 0.92, 1),
+  });
+  const gen = new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+  layout.page.drawText(`Generated (server): ${gen}`, {
+    x: MARGIN + 16,
+    y: layout.y - 64,
+    size: 8.5,
+    font,
+    color: rgb(0.9, 0.85, 1),
+  });
+  layout.y -= headerH + 20;
+
+  keyValue("Submitted at (as entered)", data.submittedAt, 9);
+
+  // —— Insured ——
+  section("1", "Proposed insured");
   const i = data.insured;
-  addLine(`Name: ${i.firstName} ${i.middleName || ""} ${i.lastName}`);
-  addLine(`Address: ${i.address1}${i.address2 ? `, ${i.address2}` : ""}`);
-  addLine(`${i.city}, ${i.state} ${i.zip}`);
-  addLine(`Sex: ${i.sex}  DOB: ${i.dob}  Birth (state/country): ${i.birthStateOrCountry}`);
-  addLine(`Email: ${i.email}  Phone: ${i.phone}`);
-  addLine(`U.S. citizen: ${i.usCitizen ? "Yes" : "No"}  Legal U.S. resident (if not citizen): ${i.legalUsResident ?? "N/A"}`);
-  addLine(`Felony conviction: ${i.felonyConviction ? "Yes" : "No"}`);
-  addLine(`SSN / Tax ID: ${i.ssnOrTaxId}`);
-  addLine(`Driver license / State ID: ${i.driversLicenseOrStateId}`);
-  addLine(`Trusted contact: ${i.trustedContact.name} | ${i.trustedContact.address} | ${i.trustedContact.phone} | ${i.trustedContact.email || ""} | ${i.trustedContact.relationship}`);
+  keyValue("Legal name", `${i.firstName} ${i.middleName ? `${i.middleName} ` : ""}${i.lastName}`);
+  keyValue(
+    "Mailing address",
+    `${i.address1}${i.address2 ? `, ${i.address2}` : ""} — ${i.city}, ${i.state} ${i.zip}`,
+  );
+  keyValue("Sex / Date of birth", `${i.sex === "M" ? "Male" : "Female"} / ${i.dob}`);
+  keyValue("State or country of birth", i.birthStateOrCountry);
+  keyValue("Email", i.email);
+  keyValue("Phone", i.phone);
+  keyValue(
+    "Citizenship & residency",
+    `U.S. citizen: ${i.usCitizen ? "Yes" : "No"}${i.legalUsResident != null ? ` — Legal U.S. resident (if not citizen): ${i.legalUsResident ? "Yes" : "No"}` : ""}`,
+  );
+  keyValue("Felony conviction (as disclosed)", i.felonyConviction ? "Yes" : "No");
+  keyValue("SSN / Tax ID", i.ssnOrTaxId);
+  keyValue("Driver license or state ID", i.driversLicenseOrStateId);
+  keyValue(
+    "Trusted contact",
+    `${i.trustedContact.name} — ${i.trustedContact.relationship}. Address: ${i.trustedContact.address}. Phone: ${i.trustedContact.phone}${i.trustedContact.email ? `. Email: ${i.trustedContact.email}` : ""}`,
+  );
   if (i.secondaryAddressee.wantsCopy) {
-    addLine(`Secondary addressee: ${i.secondaryAddressee.firstName} ${i.secondaryAddressee.lastName} ${i.secondaryAddressee.address1 || ""} ${i.secondaryAddressee.city || ""} ${i.secondaryAddressee.state || ""} ${i.secondaryAddressee.zip || ""} Phone: ${i.secondaryAddressee.phone || ""}`);
+    const s = i.secondaryAddressee;
+    keyValue(
+      "Secondary addressee (copy of communications)",
+      `${s.firstName} ${s.lastName}${s.address1 ? ` — ${s.address1}` : ""}${s.address2 ? `, ${s.address2}` : ""}${s.city ? ` — ${s.city}, ${s.state} ${s.zip}` : ""}${s.phone ? ` — Phone: ${s.phone}` : ""}`,
+    );
   }
 
   if (!data.ownerSameAsInsured && data.owner && data.owner.firstName) {
-    section("SECTION 2 — Owner (other than insured)");
+    section("2", "Owner (other than insured)");
     const o = data.owner;
-    addLine(`Name: ${o.firstName} ${o.lastName}`);
-    addLine(`Address: ${o.address1} ${o.city} ${o.state} ${o.zip}`);
-    addLine(`Relationship to insured: ${o.relationshipToInsured}`);
-    addLine(`SSN/Tax ID: ${o.ssnOrTaxId || "N/A"}`);
+    keyValue("Legal name", `${o.firstName} ${o.middleName ? `${o.middleName} ` : ""}${o.lastName ?? ""}`);
+    keyValue(
+      "Address",
+      `${o.address1 ?? ""}${o.address2 ? `, ${o.address2}` : ""} — ${o.city}, ${o.state} ${o.zip}`,
+    );
+    if (o.relationshipToInsured) keyValue("Relationship to insured", o.relationshipToInsured);
+    if (o.ssnOrTaxId) keyValue("SSN / Tax ID", o.ssnOrTaxId);
   }
 
-  section("SECTION 3 — Coverage & payment");
+  section("3", "Coverage & payment");
   const c = data.coverage;
-  addLine(`Payment mode: ${c.paymentMode}  Face amount: ${c.faceAmount}`);
-  addLine(`Plan: ${c.plan}  Accept modified plan: ${c.acceptModifiedPlan ? "Yes" : "No"}`);
-  addLine(`ACH withdrawal preference date: ${c.achWithdrawalDate}${c.achWithdrawalDayOfMonth != null ? ` (day of month: ${c.achWithdrawalDayOfMonth})` : ""}`);
-  addLine(`Riders: ADB ${c.riders.acceleratedDeathBenefit}, Grandchild ${c.riders.grandchild}, AD ${c.riders.accidentalDeathBenefit} ${c.riders.accidentalDeathFaceAmount || ""}, Charity ${c.riders.charitableGiving} ${c.riders.charityName || ""}`);
+  keyValue("Payment mode", c.paymentMode);
+  if (c.premiumWithApplication) keyValue("Premium with application", c.premiumWithApplication);
+  keyValue("Face amount", c.faceAmount);
+  keyValue("Plan type", c.plan);
+  keyValue("Accept modified plan if offered", c.acceptModifiedPlan ? "Yes" : "No");
+  if (c.nonforfeiture) keyValue("Nonforfeiture option", c.nonforfeiture);
+  if (c.aplNotDesired != null) keyValue("APL not desired", c.aplNotDesired ? "Yes" : "No");
+  if (c.dividendOption) keyValue("Dividend option", c.dividendOption);
+  keyValue(
+    "ACH / withdrawal timing",
+    `Preferred date: ${c.achWithdrawalDate}${c.achWithdrawalDayOfMonth != null ? ` — Day of month: ${c.achWithdrawalDayOfMonth}` : ""}`,
+  );
+  keyValue(
+    "Riders",
+    [
+      `Accelerated death benefit: ${c.riders.acceleratedDeathBenefit ? "Yes" : "No"}`,
+      `Grandchild: ${c.riders.grandchild ? "Yes" : "No"}`,
+      `Accidental death: ${c.riders.accidentalDeathBenefit ? "Yes" : "No"}${c.riders.accidentalDeathFaceAmount ? ` (face: ${c.riders.accidentalDeathFaceAmount})` : ""}`,
+      `Charitable giving: ${c.riders.charitableGiving ? "Yes" : "No"}${c.riders.charityName ? ` — ${c.riders.charityName}` : ""}`,
+    ].join(" · "),
+  );
 
-  section("SECTION 4 — Other insurance");
+  section("4", "Other insurance");
   const oi = data.otherInsurance;
-  addLine(`Royal Neighbors contracts: ${oi.hasRoyalNeighbors ? "Yes" : "No"}`);
-  addLine(`Other companies: ${oi.hasOtherCompanies ? "Yes" : "No"}`);
-  addLine(`Replacement disclosure: ${oi.replacementDisclosure ? "Yes" : "No"} ${oi.replacementNote || ""}`);
+  keyValue("Existing / applied — Royal Neighbors", oi.hasRoyalNeighbors ? "Yes" : "No");
+  if (oi.rnContracts?.length) {
+    oi.rnContracts.forEach((ct, idx) => {
+      keyValue(
+        `RN contract ${idx + 1}`,
+        [ct.contractNumber, ct.faceAmount, ct.planOfInsurance, ct.yearOfIssue, ct.existingOrApplied, ct.replacing != null ? `Replacing: ${ct.replacing}` : ""]
+          .filter(Boolean)
+          .join(" · "),
+      );
+    });
+  }
+  keyValue("Other companies (non-RN)", oi.hasOtherCompanies ? "Yes" : "No");
+  if (oi.otherContracts?.length) {
+    oi.otherContracts.forEach((ct, idx) => {
+      keyValue(
+        `Other carrier contract ${idx + 1}`,
+        [ct.insuranceCompany, ct.contractNumber, ct.faceAmount, ct.planOfInsurance].filter(Boolean).join(" · "),
+      );
+    });
+  }
+  keyValue("Replacement disclosure indicated", oi.replacementDisclosure ? "Yes" : "No");
+  if (oi.replacementNote) keyValue("Replacement notes", oi.replacementNote);
 
-  section("SECTION 5 — Beneficiaries");
+  section("5", "Beneficiaries");
   data.beneficiaries.forEach((b, idx) => {
-    addLine(`${idx + 1}. ${b.role.toUpperCase()} — ${b.firstName} ${b.lastName} (${b.percent}%)`);
-    addLine(`   ${b.address1} ${b.city}, ${b.state} ${b.zip} | Phone: ${b.phone || ""} | Email: ${b.email || ""}`);
-    addLine(`   Relationship: ${b.relationship} | DOB: ${b.dob} | SSN/Tax ID: ${b.ssnOrTaxId || ""}`);
+    spacer(6);
+    keyValue(
+      `Beneficiary ${idx + 1} (${b.role})`,
+      `${b.firstName} ${b.middleName ? `${b.middleName} ` : ""}${b.lastName} — ${b.percent}%`,
+    );
+    keyValue("Address", `${b.address1}${b.address2 ? `, ${b.address2}` : ""} — ${b.city}, ${b.state} ${b.zip}`);
+    keyValue("Phone / Email", [b.phone, b.email].filter(Boolean).join(" · ") || "—");
+    keyValue("Relationship / DOB", `${b.relationship} — DOB ${b.dob}`);
+    if (b.ssnOrTaxId) keyValue("SSN / Tax ID", b.ssnOrTaxId);
   });
 
-  section("SECTION 6 — Medical");
+  section("6", "Medical & build");
   const m = data.medical;
-  addLine(`Q1-Q5: ${[m.q1, m.q2, m.q3, m.q4, m.q5].map((x) => (x ? "Y" : "N")).join(" ")}`);
-  addLine(`6a-6i: ${[m.g6a, m.g6b, m.g6c, m.g6d, m.g6e, m.g6f, m.g6g, m.g6h, m.g6i].map((x) => (x ? "Y" : "N")).join(" ")}`);
-  addLine(`Extra groups: heart ${m.extraHeart}, cancer ${m.extraCancer}, mental ${m.extraMentalHealth}, lung ${m.extraRespiratory}, liver/kidney ${m.extraLiverKidney}, neuro ${m.extraNeurological}`);
-  addLine(`Q7 amputation: ${m.q7 ? "Yes" : "No"}  Q8 HIV: ${m.q8 ? "Yes" : "No"}`);
-  addLine(`Height: ${m.heightFeet}' ${m.heightInches}"  Weight: ${m.weightLbs} lbs`);
-  if (m.otherHealthDetails) addLine(`Other health details: ${m.otherHealthDetails}`);
+  const yn = (v: boolean) => (v ? "Yes" : "No");
+  keyValue(
+    "General questions (Q1–Q5)",
+    `Q1: ${yn(m.q1)} · Q2: ${yn(m.q2)} · Q3: ${yn(m.q3)} · Q4: ${yn(m.q4)} · Q5: ${yn(m.q5)}`,
+  );
+  keyValue(
+    "Condition groups 6a–6i",
+    `6a Heart/circulatory: ${yn(m.g6a)} · 6b Psychiatric/cognitive: ${yn(m.g6b)} · 6c Cancer: ${yn(m.g6c)} · 6d Diabetes (insulin): ${yn(m.g6d)} · 6e COPD/lung: ${yn(m.g6e)} · 6f Kidney/liver: ${yn(m.g6f)} · 6g MS/Parkinson’s/epilepsy: ${yn(m.g6g)} · 6h Sickle cell/lupus/ALS/transplant: ${yn(m.g6h)} · 6i Substance/pain meds: ${yn(m.g6i)}`,
+  );
+  keyValue(
+    "Additional toggles",
+    `Other heart: ${yn(m.extraHeart)} · Other cancer/tumor: ${yn(m.extraCancer)} · Other mental health: ${yn(m.extraMentalHealth)} · Other respiratory: ${yn(m.extraRespiratory)} · Other liver/kidney: ${yn(m.extraLiverKidney)} · Other neurological: ${yn(m.extraNeurological)}`,
+  );
+  keyValue("Q7 Amputation (disease)", yn(m.q7));
+  keyValue("Q8 HIV/AIDS", yn(m.q8));
+  keyValue("Height / weight", `${m.heightFeet}' ${m.heightInches}" — ${m.weightLbs} lbs`);
+  if (m.otherHealthDetails?.trim()) keyValue("Additional health details", m.otherHealthDetails.trim());
 
-  section("Banking (premium / ACH)");
+  section("7", "Banking (premium draft)");
   const bk = data.banking;
-  addLine(`Bank: ${bk.bankName}  Type: ${bk.accountType}`);
-  addLine(`Routing: ${bk.routingNumber}  Account: ${bk.accountNumber}`);
+  keyValue("Financial institution", bk.bankName);
+  keyValue("Account type", bk.accountType);
+  keyValue("Routing number", bk.routingNumber);
+  keyValue("Account number", bk.accountNumber);
 
-  section("Treating physician");
+  section("8", "Treating physician");
   const d = data.doctor;
-  addLine(`${d.firstName} ${d.lastName}, ${d.city}${d.phone ? ` | ${d.phone}` : ""}`);
+  keyValue("Physician", `${d.firstName} ${d.lastName} — ${d.city}${d.phone ? ` — ${d.phone}` : ""}`);
 
-  section("Employment");
+  section("9", "Employment");
   const e = data.employment;
-  addLine(`Status: ${e.status}`);
-  if (e.employerName) addLine(`Employer: ${e.employerName} | Title: ${e.jobTitle || ""} | Annual: ${e.annualSalary || ""}`);
+  keyValue("Status", e.status);
+  if (e.employerName) keyValue("Employer", e.employerName);
+  if (e.jobTitle) keyValue("Job title", e.jobTitle);
+  if (e.annualSalary) keyValue("Annual compensation (as stated)", e.annualSalary);
 
-  section("Signatures & attestations");
+  section("10", "Signatures & attestations");
   const a = data.attestations;
-  addLine(`Signed at: ${a.signedCity}, ${a.signedState}`);
-  addLine(`Typed signature (insured): ${a.typedSignatureInsured}`);
-  if (a.typedSignatureOwner) addLine(`Typed signature (owner): ${a.typedSignatureOwner}`);
-  addLine(`Backup withholding (insured): ${a.backupWithholdingInsured ? "Notified" : "No"}  (owner): ${a.backupWithholdingOwner ? "Notified" : "No"}`);
+  keyValue("Signed at (city, state)", `${a.signedCity}, ${a.signedState}`);
+  keyValue("Typed signature — insured", a.typedSignatureInsured);
+  if (a.typedSignatureOwner) keyValue("Typed signature — owner", a.typedSignatureOwner);
+  keyValue(
+    "Confirmations",
+    [
+      `Accuracy: ${a.accuracyConfirmed ? "Yes" : "No"}`,
+      `E-sign consent: ${a.electronicSignatureConsent ? "Yes" : "No"}`,
+      `Not binding until approved: ${a.notBindingCoverage ? "Yes" : "No"}`,
+      `ACH authorization: ${a.achAuthorization ? "Yes" : "No"}`,
+      `Privacy acknowledged: ${a.privacyAcknowledged ? "Yes" : "No"}`,
+    ].join(" · "),
+  );
+  keyValue(
+    "Backup withholding notices",
+    `Insured: ${a.backupWithholdingInsured ? "Notified" : "N/A"} · Owner: ${a.backupWithholdingOwner ? "Notified" : "N/A"}`,
+  );
 
-  y -= 12;
-  addLine("This summary is for internal processing. Coverage is not bound until approved by the insurer.", 9, true);
+  spacer(16);
+  ensure(lineHeight(9) * 3);
+  paragraph(
+    "This document summarizes information you submitted. Coverage is not bound until approved by the insurer. For internal processing use.",
+    9,
+    COL_MUTED,
+  );
 
-  const pdfBytes = await doc.save();
-  return pdfBytes;
+  const pages = doc.getPages();
+  const total = pages.length;
+  pages.forEach((p, idx) => {
+    const footer = `AEG Application Summary · Page ${idx + 1} of ${total}`;
+    p.drawText(footer, {
+      x: MARGIN,
+      y: MARGIN + 10,
+      size: LINE_FOOTER,
+      font,
+      color: COL_MUTED,
+    });
+  });
+
+  return doc.save();
 }

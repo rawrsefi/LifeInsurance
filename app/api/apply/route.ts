@@ -35,8 +35,16 @@ export async function POST(request: Request) {
 
     const data = applyPayloadSchema.safeParse(parsed);
     if (!data.success) {
+      const issues = data.error.issues.map((i) => ({
+        path: i.path.length ? i.path.join(".") : "form",
+        message: i.message,
+      }));
       return NextResponse.json(
-        { error: "Validation failed.", details: data.error.flatten() },
+        {
+          error: "Validation failed. Check the highlighted fields and try again.",
+          issues,
+          details: data.error.flatten(),
+        },
         { status: 400 }
       );
     }

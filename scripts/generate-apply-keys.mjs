@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 /**
  * Generates RSA-2048 keypair for Apply Now hybrid encryption.
+ *
  * Run: node scripts/generate-apply-keys.mjs
- * Add private key to APPLY_RSA_PRIVATE_KEY_PEM (Vercel env, multiline or base64-wrap).
- * Add public key to NEXT_PUBLIC_APPLY_RSA_PUBLIC_KEY_PEM (single line with \n escaped or use env file).
+ *
+ * Copy the two "KEY=value" lines into `.env.local` (or paste into Vercel env).
+ * Redeploy after changing NEXT_PUBLIC_* vars (they are inlined at build time).
  */
 import { generateKeyPairSync } from "node:crypto";
 
@@ -13,7 +15,20 @@ const { publicKey, privateKey } = generateKeyPairSync("rsa", {
   privateKeyEncoding: { type: "pkcs8", format: "pem" },
 });
 
-console.log("--- NEXT_PUBLIC_APPLY_RSA_PUBLIC_KEY_PEM (paste in .env.local) ---\n");
-console.log(JSON.stringify(publicKey.trim()));
-console.log("\n--- APPLY_RSA_PRIVATE_KEY_PEM (server only; never commit plaintext to git) ---\n");
-console.log(JSON.stringify(privateKey.trim()));
+const pub = publicKey.trim();
+const priv = privateKey.trim();
+
+console.log(`
+=== Apply Now — add these to .env.local (or hosting dashboard) ===
+Copy the next TWO lines exactly (each is one logical variable assignment):
+`);
+
+console.log(`NEXT_PUBLIC_APPLY_RSA_PUBLIC_KEY_PEM=${JSON.stringify(pub)}`);
+console.log(`APPLY_RSA_PRIVATE_KEY_PEM=${JSON.stringify(priv)}`);
+
+console.log(`
+Notes:
+- Keep the private key only on the server (Vercel Environment Variables, not the client).
+- After setting NEXT_PUBLIC_APPLY_RSA_PUBLIC_KEY_PEM, restart dev server / redeploy so Next.js picks it up.
+- Keys must be a matching pair; if you regenerate, update BOTH.
+`);
